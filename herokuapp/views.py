@@ -21,13 +21,32 @@ from . import models
 
 from django.db import connection
 
-from chatterbot import ChatBot
-from chatterbot.trainers import ChatterBotCorpusTrainer
+from chatterbot import ChatBot, filters
+from chatterbot.trainers import ListTrainer
+import logging
+
+custom_logger = logging.getLogger(__name__)
 
 # first load model
-chatbot = ChatBot('HelloIT',
-                    storage_adapter='chatterbot.storage.SQLStorageAdapter',
-                    database_uri='sqlite:///database.sqlite3')
+chatbot = ChatBot(
+    'elif-speak', 
+    filters=[filters.get_recent_repeated_responses],
+    storage_adapter='chatterbot.storage.SQLStorageAdapter',
+    logic_adapters=[
+        {
+            'import_path': 'chatterbot.logic.BestMatch',
+            'default_response': 'I am sorry, but I do not understand.',
+            'maximum_similarity_threshold': 0.65
+        },
+        'chatterbot.logic.MathematicalEvaluation',
+        # 'chatterbot.logic.TimeLogicAdapter'
+    ], 
+    preprocessors=[
+        'chatterbot.preprocessors.clean_whitespace'
+    ],
+    database_uri='sqlite:///database.sqlite3',
+    logger=custom_logger
+)
 
 def index(request):
     return render(request, "index.html", {"users": 1})
@@ -36,25 +55,19 @@ def index(request):
 @parser_classes((JSONParser,))
 # get all data from User
 def chatBotGet(request, format=None):  
-    result = apiChatBot(request.query_params.get('message', None))
-    suggest = apiChatBot(result)
+    result = chatbot.get_response(request.query_params.get('message', None))
+    suggest = chatbot.get_response(result)
     return Response({"result": str(result),"suggest": str(suggest)})
 
 @api_view(['POST'])
 @parser_classes((JSONParser,))
 # get all data from User
 def chatBotPost(request, format=None): 
-    return Response({"result": str(apiChatBot(request.data['message']))})  
+    return Response({"result": str(chatbot.get_response(request.data['message']))})  
     
  
 # *********************************************
-# begin common
-
-def apiChatBot(message):    
-    result = chatbot.get_response(message) 
-    return result
-
-
+# begin common   
 # convert cursor to json data
 def dictfetchall(cursor):
     "Return all rows from a cursor as a dict"
